@@ -35,7 +35,7 @@ inc_cpage = "cp1251"
 use_mongo  = True
 mongo_addr = "mongodb.myhost"
 mongo_user = "dracon"
-mongo_pass = "paswword"
+mongo_pass = "password"
 mongo_base = "draconf"
 mongo_ucol = "config_up"
 mongo_dcol = "config_down"
@@ -69,7 +69,7 @@ ports_types = {1:'ss',2:'mg',3:'br',4:'vp',5:'up',6:'ns',7:'eq',8:'pu',9:'pd'}
 mags_list   = [2,5,8,9]
 
 # Путь к каталогу с файлами конфигураций. Имя файла конфигураций должно соответствовать названию устройства
-# Пример: Для устройства с ID=210 по пути "/usr/local/etc/dracon/config/" будет производиться поиск файла 'DES-3200-28_C1'
+# Пример: Для устройства с ID=112 по пути "/usr/local/etc/dracon/config/" будет производиться поиск файла 'DES-3200-28_C1'
 cf_path = "/usr/local/etc/dracon/config/"
 
 # Путь к каталогу с ПО
