@@ -1,0 +1,55 @@
+#!/bin/sh
+#
+# $FreeBSD$
+#
+# PROVIDE: Dracon
+# REQUIRE: DAEMON %%RCLDCONFIG%%
+# BEFORE: LOGIN
+# KEYWORD: shutdown
+#
+# Add the following line to /etc/rc.conf to enable Dracon:
+#
+# dracon_enable="YES"
+#
+
+# Version: 2015.06.15
+
+. /etc/rc.subr
+
+name="dracon"
+rcvar=dracon_enable
+
+load_rc_config $name
+
+: ${dracon_enable="NO"}
+
+command_interpreter="/usr/local/bin/python2"
+command="/usr/local/etc/dracon/dracon.py"
+command_args="$1"
+start_precmd="dracon_prestart"
+stop_postcmd="dracon_poststop"
+dracon_pidfile="/var/run/dracon.pid" # Do not change it, pls!
+
+dracon_prestart() {
+    chk_pid=`check_pidfile $dracon_pidfile $command_interpreter` # Getting PID of process. If no such process PID will be empty.
+    if [ "$chk_pid" == "" ]; then				# If empty PID ...
+        {
+        if [ -f $dracon_pidfile ]; then				# ... checking PID-file presence. If file exists...
+            {
+            /bin/rm -f $dracon_pidfile				# ... remove this file.
+            }
+        fi
+        }
+    fi
+    }
+
+
+dracon_poststop() {
+    if [ -f $dracon_pidfile ]; then # Checking PID-file presence. If file exists...
+        {
+        /bin/rm -f $dracon_pidfile # ... remove this file
+        }
+    fi
+    }
+
+run_rc_command "$1"
