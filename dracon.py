@@ -1,6 +1,6 @@
 #!/usr/local/bin/python2
 #coding=UTF8
-#version 0.9.6 (2015.06.04)
+#version 0.9.9rc2 (2015.07.01)
 
 import sys, socket, struct, logging, time, MySQLdb, hashlib, re, dfunc, bson, pymongo
 from daemon import Daemon
@@ -138,6 +138,29 @@ def PutConfigToMongoDB(mongo_addr, mongo_user, mongo_pass, mongo_base, mongo_col
             else:
 		# Или сообщаем об успешной операции
 		logging.info("Succesfully sent %s bytes to MongoDB for '%s' ('%s'). Request from %s",len(cfg),target,switch,ip)
+    finally:
+	mongo_db.close()
+
+# Функция получения последней конфигурации из базы MongoDB
+def GetLastConfigFromMongoDB(mongo_addr, mongo_user, mongo_pass, mongo_base, mongo_coll, target):
+    # По умолчанию конфиг пустой
+    last_conf = ''
+    try:
+        # Пробуем подключиться к серверу
+        mongo_db = pymongo.MongoClient("mongodb://"+mongo_user+":"+mongo_pass+"@"+mongo_addr+"/"+mongo_base)
+    except pymongo.errors.ConfigurationError, err:
+        # Сообщаем в лог об ошибке подключения
+        logging.info("MongDB Error (%s): %s",mongo_addr,err)
+    else:
+        try:
+            # Пробуем получить из базы последнюю запись для данного IP-адреса и затем получить значение поля 'config'
+            last_conf = mongo_db[mongo_base][mongo_coll].find({'target':ip2long(target)}).sort('_id',-1).limit(1)
+            last_conf = last_conf[0]['config']
+        except:
+	    last_conf = ''
+    finally:
+	mongo_db.close()
+    return last_conf
 
 # Функция для определения типа передачи, режима передачи, имени файла, номера блока, IP-адреса цели, типа данных и самих данных
 def TFTP_Prepdata(tftpdata,ip):
@@ -183,9 +206,13 @@ def TFTP_Prepdata(tftpdata,ip):
 	if (transfer.find(chr(0))!=-1):
 	    transfer=transfer.replace(chr(0),'')
 
-	# Если запрошенное имя содержит 'firmware', считаем, что у нас запросили ПО и указываем это в типе данных
+	# Если запрошенное имя равно 'firmware', считаем, что у нас запросили ПО и указываем это в типе данных
 	if (tftp_filename=='firmware'):
 	    data_type='firmware'
+
+	# Если запрошенное имя равно 'backup', считаем, что у нас запросили последнюю конфигурацию из базы MongoDB для конкретного IP, и указываем это в типе данных
+	if (tftp_filename=='backup'):
+	    data_type='backup'
 
 	# Если тип запроса DATA и в данных есть еще хотя бы два байта, получаем данные (обрезать ethernet-трейлер не надо, этим занимаются другие уровни)
 	if (tftp_type=='DATA') & (len(tftpdata)>=3):
@@ -302,9 +329,11 @@ def GetData(ip,target,fname,sw,custom1,ports,custom2,transfer,data_type):
 	    # Если тип передачи отличен от 'octet', помещаем в данные сообщение об необходимости изменить тип
 	    data = "# Please, set transfer type to 'octet' (-i)!"
 
-    m5d = md5(data) # Получаем контрольную сумму для данных. Данных либо пусты либо содержат ПО
+    # Получаем данные, если запрошен backup последней конфигурации
+    if data_type == 'backup':
+	data = GetLastConfigFromMongoDB(mongo_addr, mongo_user, mongo_pass, mongo_base, mongo_ucol, target)
 
-    # Работаем, если запрошеша конфигурация и устройство определено
+    # Работаем, если запрошена конфигурация и устройство определено
     if ( (data_type == 'config') & (target != '0.0.0.0' )):
 	# Если имя файла (которое является и командой) присутствует в наборе списков команд:
 	if fname in commands.keys():
@@ -333,6 +362,13 @@ def GetData(ip,target,fname,sw,custom1,ports,custom2,transfer,data_type):
 		    for cf_line in cf_data[cmd].split("\n"):
 			# Получаем копию текущей строки, которую модернизируем при наличии в ней шаблонов
 			new_cf_line = cf_line
+
+			# Пробуем заменить подставить IP-адрес цели в шаблон {$target}
+			if '{$target}' in new_cf_line:
+			    try:
+				new_cf_line = new_cf_line.replace('{$target}', target)
+			    except:
+				pass
 
 			# Здесь выражение вида "config ports [ss#1] state enable" разбирается на список кортежей вида [('[ss#1]', 'ss', '1')]
 			# Индекс [0] указывает на исходное значение в строке, [1] - на имя списка и [2] - на _значение_ (не индекс!) внутри списка
@@ -396,8 +432,9 @@ def GetData(ip,target,fname,sw,custom1,ports,custom2,transfer,data_type):
 				new_cf_line = "#"+new_cf_line
 
 			data += new_cf_line+"\n"
-	    # Получаем контрольную сумму для данных. Если запрошена конфигурация, значение переопределится. Если нет - останется прежнее
-	    m5d = md5(data)
+
+    # Получаем контрольную сумму для данных
+    m5d = md5(data)
 
     # Если цель не определена и запрошена "Справка", возвращаем краткую справку
     if ( (target == '0.0.0.0') & (fname=='help') ):
@@ -522,11 +559,11 @@ def main():
 		# Получаем имя (модель), сеть и адрес удаленного устройства
 		rem_dev, rem_cust1, rem_cust2 = GetSWInfo(target_ip,devices)
 		# Если запрошена конфигурация, получаем данные в виде блоков и их MD5-сумму (от целой части без блоков)
-		if (data_type=='config'):
+		if (data_type == 'config'):
 		    cfg_tmp, md5_tmp = GetData(rem_ip,target_ip,tftp_filename,rem_dev,rem_cust1,ports[target_ip],rem_cust2,transfer,data_type)
 
-		# Если запрошено ПО, получаем данные в виде блоков и их MD5-сумму (от целой части без блоков). Вместо портов передаем пустой список
-		if (data_type=='firmware'):
+		# Если запрошено ПО или backup конфигурации, то проделываем то же самое, но вместо портов передаем пустой список
+		if ( (data_type == 'firmware') or (data_type == 'backup') ):
 		    cfg_tmp, md5_tmp = GetData(rem_ip,target_ip,tftp_filename,rem_dev,rem_cust1,[],              rem_cust2,transfer,data_type)
 
 		# Если для удаленного хоста данные уже определены, обновляем их. В противном случае - добавляем
@@ -593,7 +630,7 @@ def main():
 			tmp_dct.pop(0)
 			# Получаем MD5-сумму и размер полученных данных
 			m5d, fln = md5size(tmp_dct)
-			# Очищаем временный словарь. Не знаю, как сделать красивее. :)
+			# Очищаем временный словарь
 			tmp_dct.clear()
 			# Пишем в лог об окончании передачи
 			logging.info('Successfully sent to  %s for device %s. Transferred file: %s. Size: %s, blocks: %s', dip, dev, fil, fln, blk)
@@ -618,7 +655,7 @@ def main():
 		    # Помещаем полученные данные в базе MongoDB: PutConfigToMongoDB(адрес, пользователь, пароль, база, коллекция, данные, цель, коммутатор, IP, хеш)
 		    if use_mongo:
 			PutConfigToMongoDB(mongo_addr, mongo_user, mongo_pass, mongo_base, mongo_dcol, tmp_dct, tmp_tgt, tmp_fil, tmp_sw, rem_ip, tmp_m5d) 
-		    # Очищаем временный словарь. Не знаю, как сделать красивее. :)
+		    # Очищаем временный словарь
 		    tmp_dct.clear()
 		# Удаляем данные из словаря, т.к. передача закончена и они больше не нужны
 		del cfg_fw[rem_ip][rem_port]
@@ -699,7 +736,7 @@ def main():
 				    # Получаем MD5-сумму и размер полученных данных
 				    m5d, fln = md5size(cfg_up[rem_ip][rem_port]['cfg'])
 				    # Пишем в лог об окончании приема
-				    logging.info("Recieved file  from %s for device '%s' (%s). Transferred file: '%s'. Size: %s, blocks: %s, md5: %s", dip, tmp_tgt, tmp_sw, tmp_fil, fln, blk, md5)
+				    logging.info("Recieved file  from %s for device '%s' (%s). Transferred file: '%s'. Size: %s, blocks: %s, md5: %s", dip, tmp_tgt, tmp_sw, tmp_fil, fln, blk, m5d)
 				    # Пример: Recieved file  from '10.137.130.56:57904' for device '10.99.0.2' (DES-3200-28). Transferred file: 'cfg'. Size: 318, blocks: 1, md5: c6c253ff4110f77b917901bb89d762df
 				    # Помещаем полученные данные в базе MongoDB: PutConfigToMongoDB(адрес, пользователь, пароль, база, коллекция, данные, цель, коммутатор, IP, хеш)
 				    if use_mongo:
