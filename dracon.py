@@ -1,6 +1,6 @@
 #!/usr/local/bin/python2
 #coding=UTF8
-#version 0.9.9rc2 (2015.07.01)
+#version 1.0.0 (2015.07.11)
 
 import sys, socket, struct, logging, time, MySQLdb, hashlib, re, dfunc, bson, pymongo
 from daemon import Daemon
