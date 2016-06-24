@@ -1,14 +1,14 @@
 #!/usr/local/bin/python2
 #coding=UTF8
-#version 1.0.0 (2015.07.11)
+#version 2.6.24 (2016.06.24)
 
 import sys, socket, struct, logging, time, MySQLdb, hashlib, re, dfunc, bson, pymongo
 from daemon import Daemon
-from dconfig import interface, port, cycle_int, sleep_def, sleep_int
+from dconfig import interface_ip, port, cycle_int, sleep_def, sleep_int
 from dconfig import mysql_addr, mysql_user, mysql_pass, mysql_base
 from dconfig import mysql_query_p, mysql_query_d, mongo_addr, mongo_user
 from dconfig import mongo_pass, mongo_base, mongo_ucol, mongo_dcol, use_mongo
-from dconfig import default_ports, fw_path, fw_names, cf_path, inc_cpage
+from dconfig import fw_path, fw_names, cf_path
 from dconfig import dev_types, logfile, commands, helpinfo, ports_types
 from dconfig import mags_list
 
@@ -22,7 +22,7 @@ def md5(src):
     md5hash.update(src)
     return md5hash.hexdigest()
 
-# Функция для определния MD5 хеш-суммы и размера блока данных
+# Функция для определения MD5 хеш-суммы и размера блока данных
 def md5size(src):
     # Сортируем и склеиваем блоки данных
     data  =''.join([src[i] for i in sorted(src.keys())])
@@ -54,16 +54,16 @@ def GetFWFileName(sw):
 # Функция получения информации об устройстве
 def GetSWInfo(ip, devices):
     # Значения модели, адреса и пользовательского поля по умолчанию
-    dtype='n/a'; custom1='n/a'; custom2='n/a'
+    dtype='n/a'
+    custom='n/a';
     # Проверяем, есть ли IP устройства в словаре и есть ли соответствующий ID в словаре типов
     if (ip in devices): 
         if devices[ip]['dtype'] in dev_types:
 	    # Получаем имя устройства по его типу
             dtype = dev_types[devices[ip]['dtype']]
 	# Получаем адрес и пользовательское поле
-        custom1 = devices[ip]['custom1']
-        custom2 = devices[ip]['custom2']
-    return dtype, custom1, custom2
+        custom = devices[ip]['custom']
+    return dtype, custom
 
 # Функция для подготовки словаря портов
 def PreparePorts(ports_tmp):
@@ -73,10 +73,10 @@ def PreparePorts(ports_tmp):
         ports[line[0]]={}
     # Перебираем весь список с результатами MySQL-запроса. Результаты добавляем во временный словарь
     for line in ports_tmp:
-        ports[line[0]].update({int(line[1]):{'ptype':line[2], 'comment1':Translit(line[3]), 'comment2':Translit(line[4])}})
-    # Добавляем пустой набор портов в общий словарь
-    ports.update(default_ports)
-    # Словарь будет иметь вид {IP:{port:{'ptype':value, 'comment1':value, 'comment2':value},...}}.
+        ports[line[0]].update({ int(line[1]) : { 'ptype':line[2], 'comment':line[3] } })
+    # Помещаем в словарь портов пустой словарь для коммутатора с неизвестным IP
+    ports.update({None:{}})
+    # Словарь будет иметь вид {IP:{port:{'ptype':value, 'comment':value},...}}.
     return ports
 
 # Функция для получения списка устройств из базы MySQL
@@ -220,23 +220,6 @@ def TFTP_Prepdata(tftpdata,ip):
 
     return tftp_type, transfer, tftp_filename, tftp_block, target_ip, data_type, data_upl
 
-# Функция для проверки корректности сетевого адреса ### Проверить нужна ли она вообще!!!
-def GetOctets(custom1):
-    # Отрезаем маску и получаем список октетов
-    octets = custom1.split('/')[0].split('.')
-    # Проверяем длину списка
-    if len(octets) != 4:
-        return False
-    # Проверяем является ли октет допустимым числом
-    for x in octets:
-        if not x.isdigit():
-            return False
-        i = int(x)
-        if i < 0 or i > 255:
-            return False
-    # Возвращаем первые 3 октета, если все хорошо
-    return octets[0], octets[1], octets[2]
-
 # Функция, возвращающая список с типами портов и их диапазоном
 def PStat(ports):
     # Функция получения диапазона портов
@@ -282,30 +265,8 @@ def PStat(ports):
     res_dict['mags'] = GetRange(ports_tmp)
     return res_dict
 
-# Функция для транслитерации кириллицы в из определяемой пользователем кодировки
-def Translit(srcstr):
-    try: new_str = unicode(srcstr,inc_cpage)
-    except: new_str = srcstr
-    conversion = {
-        u'\u0410' : 'A',    u'\u0430' : 'a',  u'\u0411' : 'B',    u'\u0431' : 'b',  u'\u0412' : 'V',    u'\u0432' : 'v',
-        u'\u0413' : 'G',    u'\u0433' : 'g',  u'\u0414' : 'D',    u'\u0434' : 'd',  u'\u0415' : 'E',    u'\u0435' : 'e',
-        u'\u0401' : 'Yo',   u'\u0451' : 'yo', u'\u0416' : 'Zh',   u'\u0436' : 'zh', u'\u0417' : 'Z',    u'\u0437' : 'z',
-        u'\u0418' : 'I',    u'\u0438' : 'i',  u'\u0419' : 'Y',    u'\u0439' : 'y',  u'\u041a' : 'K',    u'\u043a' : 'k',
-        u'\u041b' : 'L',    u'\u043b' : 'l',  u'\u041c' : 'M',    u'\u043c' : 'm',  u'\u041d' : 'N',    u'\u043d' : 'n',
-        u'\u041e' : 'O',    u'\u043e' : 'o',  u'\u041f' : 'P',    u'\u043f' : 'p',  u'\u0420' : 'R',    u'\u0440' : 'r',
-        u'\u0421' : 'S',    u'\u0441' : 's',  u'\u0422' : 'T',    u'\u0442' : 't',  u'\u0423' : 'U',    u'\u0443' : 'u',
-        u'\u0424' : 'F',    u'\u0444' : 'f',  u'\u0425' : 'H',    u'\u0445' : 'h',  u'\u0426' : 'Ts',   u'\u0446' : 'ts',
-        u'\u0427' : 'Ch',   u'\u0447' : 'ch', u'\u0428' : 'Sh',   u'\u0448' : 'sh', u'\u0429' : 'Sch',  u'\u0449' : 'sch',
-        u'\u042a' : '"',    u'\u044a' : '"',  u'\u042b' : 'Y',    u'\u044b' : 'y',  u'\u042c' : '\'',   u'\u044c' : '\'',
-        u'\u042d' : 'E',    u'\u044d' : 'e',  u'\u042e' : 'Yu',   u'\u044e' : 'yu', u'\u042f' : 'Ya',   u'\u044f' : 'ya',
-    }
-    translitstring = []
-    for c in new_str:
-        translitstring.append(conversion.setdefault(c, c))
-    return ''.join(translitstring).encode("utf-8")
-
 # Функция подготовки данных
-def GetData(ip,target,fname,sw,custom1,ports,custom2,transfer,data_type):
+def GetData(ip, target, fname, sw, custom, ports, transfer, data_type):
     # Определяем размер блока данных и объявляем переменную для хранения данных
     block_size = 512
     data = ''
@@ -334,7 +295,7 @@ def GetData(ip,target,fname,sw,custom1,ports,custom2,transfer,data_type):
 	data = GetLastConfigFromMongoDB(mongo_addr, mongo_user, mongo_pass, mongo_base, mongo_ucol, target)
 
     # Работаем, если запрошена конфигурация и устройство определено
-    if ( (data_type == 'config') & (target != '0.0.0.0' )):
+    if ( (data_type == 'config') & (target != None )):
 	# Если имя файла (которое является и командой) присутствует в наборе списков команд:
 	if fname in commands.keys():
 	    try:
@@ -352,8 +313,8 @@ def GetData(ip,target,fname,sw,custom1,ports,custom2,transfer,data_type):
 	    reg_x  = re.compile(r"(\[(?P<k>[a-zA-Z]+)\#(?P<v>\d+)\])")
 	    # Шаблон для поиска конструкций вида [ss]
 	    reg_nx = re.compile(r"(\[(?P<val>\S+)\])",re.IGNORECASE|re.DOTALL)
-	    # Шаблон для поиска конструкций вида (fn#1)
-	    reg_fn = re.compile(r"(\((?P<k>[a-zA-Z_0-9]+)\#(?P<v>[a-zA-Z_0-9]+)\))")
+	    # Шаблон для поиска конструкций вида {function_name#param}
+	    reg_fn = re.compile(r"(\{([a-zA-Z_0-9]+)\#([^\t\n\r\f\v\{\}]*)\})")
 
 	    # Перебираем все команды внутри списка для данной команды
 	    for cmd in commands[fname]:
@@ -363,12 +324,9 @@ def GetData(ip,target,fname,sw,custom1,ports,custom2,transfer,data_type):
 			# Получаем копию текущей строки, которую модернизируем при наличии в ней шаблонов
 			new_cf_line = cf_line
 
-			# Пробуем заменить подставить IP-адрес цели в шаблон {$target}
-			if '{$target}' in new_cf_line:
-			    try:
-				new_cf_line = new_cf_line.replace('{$target}', target)
-			    except:
-				pass
+			# Заменяем зарезервированные слова на значения соответствующих переменных
+			new_cf_line = new_cf_line.replace('{$target}', target)
+			new_cf_line = new_cf_line.replace('{$datetime}', GetDTTM()[1])
 
 			# Здесь выражение вида "config ports [ss#1] state enable" разбирается на список кортежей вида [('[ss#1]', 'ss', '1')]
 			# Индекс [0] указывает на исходное значение в строке, [1] - на имя списка и [2] - на _значение_ (не индекс!) внутри списка
@@ -398,38 +356,27 @@ def GetData(ip,target,fname,sw,custom1,ports,custom2,transfer,data_type):
 			    # Заменяем шаблон на диапазон портов (если он был распознан) или на сам шаблон (то есть ничего не поменяется)
 			    new_cf_line = new_cf_line.replace(p_range[0],p_check)
 
-			# Аналогично первому случаю разбираем строку для поиска пользовательских функций по шаблону (fn#1)
+			# Разбираем строку для поиска пользовательских функций по шаблону {fn#1}. Сначала выполняем проверку на 'comment'
+			for fn_list in reg_fn.findall(new_cf_line):
+			    if fn_list[1][0:8] == 'comment':
+				try:
+				    new_cf_line = new_cf_line.replace(fn_list[0],ports[int(fn_list[2])]['comment'])
+				except:
+				    new_cf_line = "#"+new_cf_line
+
+			# Аналогично проверяем все остальные шаблоны {fn#1}, уже для поиска функций
 			for fn_list in reg_fn.findall(new_cf_line):
 			    # Проверяем, начинается ли пользовательская функция на 'fn_'
 			    if fn_list[1][0:3] == 'fn_':
 				# Определяем параметр пользовательской функции. Если используются зарезервированные слова, работаем с ними, иначе получаем параметр из запроса.
 				fn_param = fn_list[2]
-				if fn_list[2] == 'custom1':
-				    fn_param = custom1
-				if fn_list[2] == 'custom2':
-				    fn_param = custom2
+				if fn_list[2] == 'custom':
+				    fn_param = custom
 				try:
 				    # Пробуем применить пользовательскую функцию. Имя функции получаем из шаблона. Сами функции хранятся в модуле dfunc.
 				    new_cf_line = new_cf_line.replace(fn_list[0],getattr(dfunc,fn_list[1])(fn_param))
 				except:
 				    new_cf_line = "#"+new_cf_line
-
-			    # Выполняем проверки на случай использования функций для получения 'comment1' и 'comment2'
-			    elif fn_list[1][0:8] == 'comment1':
-				try:
-				    new_cf_line = new_cf_line.replace(fn_list[0],ports[int(fn_list[2])]['comment1'])
-				except:
-				    new_cf_line = "#"+new_cf_line
-
-			    elif fn_list[1][0:8] == 'comment2':
-				try:
-				    new_cf_line = new_cf_line.replace(fn_list[0],ports[int(fn_list[2])]['comment2'])
-				except:
-				    new_cf_line = "#"+new_cf_line
-
-			    else:
-				# При использовании функций с нестандартными именами (начинается не с 'fn_' или 'cmt') также комментируем строку
-				new_cf_line = "#"+new_cf_line
 
 			data += new_cf_line+"\n"
 
@@ -437,7 +384,7 @@ def GetData(ip,target,fname,sw,custom1,ports,custom2,transfer,data_type):
     m5d = md5(data)
 
     # Если цель не определена и запрошена "Справка", возвращаем краткую справку
-    if ( (target == '0.0.0.0') & (fname=='help') ):
+    if ( (target == None) & (fname=='help') ):
 	data = helpinfo
 
     data_items=(lambda c, l: int(float(c)/l>=c//l)+c/l)(len(data),block_size) # Получаем количество блоков по 512 байт
@@ -476,8 +423,8 @@ def main():
     ports = PreparePorts(ports_tmp)
     # Получаем информацию о коммутаторах из базы данных
     devices_tmp = GetDataFromMySQL(mysql_addr,mysql_user,mysql_pass,mysql_base,mysql_query_d,'*Select devices*')
-    # Формируем словарь вида {ip:{type:val,custom1:val,custom2:val}}
-    devices = {item[0]:{'dtype':item[1],'custom1':Translit(item[2]),'custom2':Translit(item[3])} for item in list(devices_tmp)}
+    # Формируем словарь вида {ip:{type:val,custom:val}}
+    devices = {item[0]:{'dtype':item[1],'custom':item[2]} for item in list(devices_tmp)}
 
     # Объявляем словарь для хранения данных и других параметров
     cfg_fw = {}
@@ -488,7 +435,7 @@ def main():
     tftp  = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     # Пробуем открыть сокет и обрабатываем возможную ошибку
     try:
-	tftp.bind((interface,port))
+	tftp.bind((interface_ip,port))
     # При возникновении ошибки делаем запись в логе и завершаем работу
     except socket.error as err:
 	logging.info("Socket Error: %s Exiting...", err.args[1])
@@ -518,7 +465,7 @@ def main():
 	    devices_tmp = GetDataFromMySQL(mysql_addr,mysql_user,mysql_pass,mysql_base,mysql_query_d,'*Select devices*')
 	    # Если длина запроса составляет не менее 90% от длины предыдущего, то помещаем новый список устройств в основной список
 	    if (len(devices_tmp) > len(devices)*0.9):
-		devices={item[0]:{'dtype':item[1],'custom1':item[2],'custom2':Translit(item[3])} for item in list(devices_tmp)}
+		devices={item[0]:{'dtype':item[1],'custom':item[2]} for item in list(devices_tmp)}
 
 	# Пробуем получить данные с сокета (2 байта для типа передачи, 2 байта для номера блока и еще 512 для данных)
 	try: tftpdata, tftpaddr = tftp.recvfrom(516)
@@ -552,19 +499,19 @@ def main():
 		# Пример: -->Request (RRQ) from '10.137.130.56:52843' for device '10.99.0.2' (DES-3200-28). Requested   file: 'cfg'
 
 		# Можно запросить данные для произвольного устройства, но отдать - только для имеющегося. Потому на выходе может быть только реальный IP
-		# Если коммутатора с IP назначения нет в списке и запрошена конфигурация, используем IP для коммутатора по умолчанию (0.0.0.0)
-		if (target_ip not in ports) & (data_type=='config'): target_ip='0.0.0.0'
+		# Если коммутатора с IP назначения нет в списке и запрошена конфигурация, вместо IP используем 'None'
+		if (target_ip not in ports) & (data_type=='config'): target_ip = None
 		# Если запрошено ПО, то данные о портах не нужны, но нужна модель устройства, поэтому не обнуляем IP
 
 		# Получаем имя (модель), сеть и адрес удаленного устройства
-		rem_dev, rem_cust1, rem_cust2 = GetSWInfo(target_ip,devices)
+		rem_dev, rem_cust = GetSWInfo(target_ip, devices)
 		# Если запрошена конфигурация, получаем данные в виде блоков и их MD5-сумму (от целой части без блоков)
 		if (data_type == 'config'):
-		    cfg_tmp, md5_tmp = GetData(rem_ip,target_ip,tftp_filename,rem_dev,rem_cust1,ports[target_ip],rem_cust2,transfer,data_type)
+		    cfg_tmp, md5_tmp = GetData(rem_ip,target_ip,tftp_filename,rem_dev,rem_cust,ports[target_ip],transfer,data_type)
 
 		# Если запрошено ПО или backup конфигурации, то проделываем то же самое, но вместо портов передаем пустой список
 		if ( (data_type == 'firmware') or (data_type == 'backup') ):
-		    cfg_tmp, md5_tmp = GetData(rem_ip,target_ip,tftp_filename,rem_dev,rem_cust1,[],              rem_cust2,transfer,data_type)
+		    cfg_tmp, md5_tmp = GetData(rem_ip,target_ip,tftp_filename,rem_dev,rem_cust,[              ],transfer,data_type)
 
 		# Если для удаленного хоста данные уже определены, обновляем их. В противном случае - добавляем
 		if rem_ip in cfg_fw.keys():
@@ -611,8 +558,8 @@ def main():
 			# Контрольная хеш-сумма
 			m5d=cfg_fw[rem_ip][rem_port]['md5']
 			# Пишем в лог о старте передачи
-			logging.info('<--Sending data  to   %s for device %s. Prerared    file: %s, md5: %s', dip, dev, fil, m5d)
-			# Пример:     <--Sending data  to   '10.137.130.56:52843' for device '10.99.0.2' (DES-3200-28). Prerared    file: 'cfg', md5: c6c253ff4110f77b917901bb89d762df
+			logging.info('<--Sending data  to   %s for device %s. Prepared    file: %s, md5: %s', dip, dev, fil, m5d)
+			# Пример:     <--Sending data  to   '10.137.130.56:52843' for device '10.99.0.2' (DES-3200-28). Prepared    file: 'cfg', md5: c6c253ff4110f77b917901bb89d762df
 
 		    # Обрабатываем ситуацию, когда мы получили подтверждение от предпоследнего блока и только что отправили последний
 		    if (tftp_block==total_blocks-1):

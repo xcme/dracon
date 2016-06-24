@@ -1,6 +1,6 @@
-#!/usr/local/bin/python
-#coding=UTF8 # Определяем кодировку, чтобы компилятор не падал в обморок
-#version 2014.01.27
+#!/usr/local/bin/python2
+#coding=UTF8
+#version 2016.06.22
 
 import sys, os, time, atexit
 from signal import SIGTERM
