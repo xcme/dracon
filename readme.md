@@ -336,15 +336,13 @@ config igmp_snooping multicast_vlan mvr add source_port 25
 config cpu_filter l3_control_pkt   [ss] all state enable
 config cpu_filter l3_control_pkt [mags] all state disable
 ```
+
 #### Подстановка значения comment для портов 1 и 2
 ```
 config ports  1 description "{comment#1}"
 config ports  2 description "{comment#2})"
 ```
-#### Вызов пользовательской функции fn_cst с параметром custom2
-```
-config snmp system_location {fn_cst#custom2}
-```
+
 #### Вызов пользовательских функций fn_2oct и fn_3oct с параметром custom и подстановка номеров портов 1 и 2 из диапазона абонентских портов.
 ```
 config access_profile profile_name pcf add access_id 101 packet_content offset_chunk_1 0x0800 offset_chunk_2 0x0A{fn_2oct#custom}{fn_3oct#custom}08 port  [ss#1] permit
@@ -357,7 +355,7 @@ config access_profile profile_name pcf add access_id 102 packet_content offset_c
 + Добавьте строку **dracon_enable="YES"** в файл */etc/rc.conf*.
 + Запустите сервис командой **service dracon start**.
  
-## Установка под Lunix
+## Установка под Linux
 + Скопируйте файл **dracon** из директории '*linux*' в '*/etc/init.d/*', а остальные файлы в '*/usr/local/etc/dracon/*'.
 + Запустите сервис командой **service dracon start**.
 
