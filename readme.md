@@ -187,6 +187,7 @@ fw_names = {
 Параметр  | Описание
 ----------|---------
  commands | Доступные команды (имена **запрашиваемых** файлов) и соответствующие им шаблоны с наборами команд
+
 Параметр *commands* задается в виде **словаря** *python*, где значениями являются **списки**. Сами команды и соответствующие им шаблоны целиком определяются пользователем. Пример:
 
 ```python
@@ -363,7 +364,7 @@ config access_profile profile_name pcf add access_id 101 packet_content offset_c
 config access_profile profile_name pcf add access_id 102 packet_content offset_chunk_1 0x0800 offset_chunk_2 0x0A{fn_2oct#custom}{fn_3oct#custom}10 port  [ss#2] permit
 ```
 
-## Установка под Linux
+## Установка под Linux (пример для Centos 7)
 + Выполните команду: **git clone https://github.com/xcme/dracon.git**
 + Скопируйте файл '**dracon.service**' из директории '*./linux/centos/*' в '*/etc/systemd/system/*'.
 + Запустите сервис командой **systemctl start dracon**.
