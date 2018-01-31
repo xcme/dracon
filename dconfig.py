@@ -1,43 +1,53 @@
 #coding=UTF8
 # IP-адрес интерфейса, на котором будет работать демон
-interface_ip = ""
-# UDP-порт для tftp-сервера
-port         = 69
-# Количество секунд, через которое надо обновлять список портов и устройств
-cycle_int    = 300
+interface_ip    = ""
+# UDP-порт для TFTP-сервера
+port            = 69
+# Время в секундах, через которое надо обновлять список портов и устройств
+cycle_int       = 300
 # Пауза по умолчанию при опросе UDP-сокета
-sleep_def    = 0.05
-# Количество секунд простоя (данные не поступают), через которые надо выставить паузу по умолчанию
-sleep_int    = 3
-# Лог-файл демона
-logfile      = "/var/log/dracon.log"
+sleep_def       = 0.05
+# Время простоя (данные не поступают) в секундах, через которое надо выставить паузу по умолчанию
+sleep_int       = 3
+# Имя файла журнала
+log_file        = "/var/log/dracon.log"
+# Размер файла журнала при достижении которого начинается ротация
+log_size        = 1048576
+# Количество архивных копий лога
+log_backupcount = 4
 
 # Настройки для MySQL-сервера, откуда будут забираться данные
-mysql_addr = "mysql.myhost"
+mysql_addr = "mysql.localhost"
 mysql_user = "user"
 mysql_pass = "password"
-mysql_base = "base"
+mysql_base = "devices"
 
-# MySQL-запрос для получения IP-адресов и данных о портах коммутатора
-mysql_query_p = """
-SELECT '10.90.90.95' ip, 1 AS port, 1 AS ptype, 'user12345' AS comment;
+# Настройки для PostgreSQL-сервера, откуда будут забираться данные. Используется как альтернатива MySQL
+postgresql_addr = "postgresql.localhost"
+postgresql_user = "user"
+postgresql_pass = "pass"
+postgresql_base = "devices"
+use_postgresql  = False
+
+# Запрос к базе данных для получения списка устройств. Поля: ip(str), type(int), custom(str)
+devices_query = """
+SELECT '10.90.90.95' AS ip, 24 AS type, '192.168.0.0/24' AS custom;
 """
 
-# MySQL-запрос для получения данных о коммутаторах: IP-адрес, тип, сеть, адрес
-mysql_query_d = """
-SELECT '10.90.90.95' AS ip, 24 AS `type`, '192.168.0.0/24' AS custom;
+# Запрос к базе данных для получения сведений о портах коммутатора. Поля: ip(str), port(int), ptype(int), comment(str)
+ports_query = """
+SELECT '10.90.90.95' AS ip, 1 AS port, 1 AS ptype, 'user12345' AS comment;
 """
 
-# Настройки для сервера MongoDB, где будут храниться результаты работы
-use_mongo  = True
-mongo_addr = "mongodb.myhost"
-mongo_user = "dracon"
-mongo_pass = "password"
-mongo_base = "draconf"
-mongo_ucol = "config_up"
-mongo_dcol = "config_down"
+# Настройки для MySQL-сервера, где будет храниться конфигурация и информация о транзакциях
+mysql_addr_w = "localhost"
+mysql_user_w = "dracon"
+mysql_pass_w = "draconpass"
+mysql_base_w = "dracon"
+mysql_ctbl_w = "configs"
+mysql_ttbl_w = "transactions"
 
-# Соответствие идентификаторов типов устройств и их названий
+# Соответствие идентификаторов типов устройств их названиям
 dev_types = {
      24 : 'DES-3200-28',	# DES-3200-28/A1
     218 : 'DES-3200-28',	# DES-3200-28/B1
@@ -56,15 +66,16 @@ ports_types = {1:'ss', 2:'mg', 3:'br', 4:'vp', 5:'up', 6:'ns', 7:'eq', 8:'pu', 9
 # 6 - нестандартный, 7 - оборудование, 8 - вход (патчкорд), 9 - магистраль (патчкорд)
 
 # Список кодов магистральных портов
-mags_list   = [2,5,8,9]
+mags_list   = [2, 5, 8, 9]
 
 # Путь к каталогу с файлами конфигураций. Имя файла конфигураций должно соответствовать названию устройства
 # Пример: Для устройства с ID=210 по пути "/usr/local/etc/dracon/config/" будет производиться поиск файла 'DES-3200-28_C1'
-cf_path = "/usr/local/etc/dracon/config/"
+cf_path  = "/usr/local/etc/dracon/config/"
 
-# Путь к каталогу с ПО
+# Путь к каталогу с программным обеспечением
 fw_path  = "/usr/local/etc/dracon/fw/"
-# Соответствие названий устройств и файлов с программным обеспечением
+
+# Соответствие названий устройств именам файлов с программным обеспечением
 fw_names = {
     'DES-3200-28'    : 'DES-3200R_1.85.B008.had',
     'DES-3200-28_C1' : 'DES3200R_4.39.B008.had',
@@ -100,7 +111,7 @@ commands = {
     }
 
 # Содержимое справки, получаемой по команде (имени файла) 'help'
-helpinfo="""
+helpinfo = """
 Available commands:
 
 acl - Standard ACL
